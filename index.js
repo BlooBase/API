@@ -19,11 +19,46 @@ admin.initializeApp({
 });
 
 const db = admin.firestore();
+const authAdmin = admin.auth(); // To access Firebase Auth admin methods
+
+// Authentication Middleware
+const authenticate = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Unauthorized: Missing or invalid token' });
+  }
+
+  const idToken = authHeader.split(' ')[1];
+
+  try {
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    req.user = decodedToken; // Add user info to the request object
+    next();
+  } catch (error) {
+    console.error('Error verifying ID token:', error);
+    return res.status(401).json({ error: 'Unauthorized: Invalid token' });
+  }
+};
+
+// Optional Authorization Middleware (Example - Role-based)
+const authorizeRole = (roles) => {
+  return (req, res, next) => {
+    if (!req.user || !req.user.role || !roles.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Forbidden: Insufficient permissions' });
+    }
+    next();
+  };
+};
 
 // Add a new user
-app.post('/api/users', async (req, res) => {
+app.post('/api/users', authenticate, async (req, res) => {
   try {
     const { userId, email, name, role, authProvider } = req.body;
+    // You might want to verify if the userId from the client matches the uid from the token
+    if (req.user.uid !== userId) {
+      return res.status(403).json({ error: 'Forbidden: User ID mismatch' });
+    }
     const userData = {
       Email: email,
       Name: name,
@@ -40,12 +75,17 @@ app.post('/api/users', async (req, res) => {
 });
 
 // Get user data by ID
-app.get('/api/users/:userId', async (req, res) => {
+app.get('/api/users/:userId', authenticate, async (req, res) => {
   try {
     const userId = req.params.userId;
+    // Ensure the requested userId matches the authenticated user's uid
+    if (req.user.uid !== userId) {
+      return res.status(403).json({ error: 'Forbidden: Cannot access other user data' });
+    }
     const userDoc = await db.collection('Users').doc(userId).get();
     if (userDoc.exists) {
-      res.status(200).json(userDoc.data());
+      // Add the role to the response if needed
+      res.status(200).json({ ...userDoc.data(), role: req.user.role });
     } else {
       res.status(404).json({ error: 'User not found' });
     }
@@ -56,9 +96,13 @@ app.get('/api/users/:userId', async (req, res) => {
 });
 
 // Update user info name and email
-app.patch('/api/users/:userId', async (req, res) => {
+app.patch('/api/users/:userId', authenticate, async (req, res) => {
   try {
     const userId = req.params.userId;
+    // Ensure the user can only update their own data
+    if (req.user.uid !== userId) {
+      return res.status(403).json({ error: 'Forbidden: Cannot update other user data' });
+    }
     const { name, email } = req.body;
     const updates = {};
     if (name) updates.Name = name;
@@ -77,10 +121,13 @@ app.patch('/api/users/:userId', async (req, res) => {
 });
 
 //Delete user account
-app.delete('/api/users/:userId', async (req, res) => {
+app.delete('/api/users/:userId', authenticate, async (req, res) => {
   try {
     const userId = req.params.userId;
-    // You might want to add server-side checks or logging here
+    // Ensure the user can only delete their own account (or an admin can)
+    if (req.user.uid !== userId) {
+      return res.status(403).json({ error: 'Forbidden: Cannot delete other user accounts' });
+    }
     await db.collection('Users').doc(userId).delete();
     // Optionally, you might want to also delete the associated Firebase Auth user
     // await authAdmin.deleteUser(userId);
@@ -91,10 +138,8 @@ app.delete('/api/users/:userId', async (req, res) => {
   }
 });
 
-
-
 // Get the count of users with a specific role
-app.get('/api/roles/:roleName/size', async (req, res) => {
+app.get('/api/roles/:roleName/size', authenticate, authorizeRole(['admin']), async (req, res) => {
   try {
     const roleName = req.params.roleName;
     const usersRef = db.collection('Users');
@@ -107,7 +152,7 @@ app.get('/api/roles/:roleName/size', async (req, res) => {
 });
 
 // Get the size of a collection
-app.get('/api/collections/:collectionName/size', async (req, res) => {
+app.get('/api/collections/:collectionName/size', authenticate, authorizeRole(['admin']), async (req, res) => {
   try {
     const collectionName = req.params.collectionName;
     const collectionRef = db.collection(collectionName);
@@ -118,7 +163,6 @@ app.get('/api/collections/:collectionName/size', async (req, res) => {
     res.status(500).json({ error: `Failed to get size of collection ${collectionName}`, details: error.message });
   }
 });
-
 
 // Start the server
 const PORT = process.env.PORT || 5000;
