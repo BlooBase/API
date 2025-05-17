@@ -45,9 +45,106 @@ const authenticate = async (req, res, next) => {
 };
 
 
-// --- User Management Endpoints ---
+app.post('/api/users', authenticate, async (req, res) => {
+  try {
+    const { userId, email, name, role, authProvider } = req.body;
+    if (req.user.uid !== userId) {
+      return res.status(403).json({ error: 'Forbidden: User ID mismatch' });
+    }
+    const userData = {
+      Email: email,
+      Name: name,
+      joinedAt: admin.firestore.FieldValue.serverTimestamp(),
+      authProvider: authProvider,
+      Role: role,
+    };
+    await db.collection('Users').doc(userId).set(userData);
+    res.status(200).json({ message: 'User added successfully' });
+  } catch (error) {
+    console.error('Error adding user:', error);
+    res.status(500).json({ error: 'Failed to add user', details: error.message });
+  }
+});
+
+app.get('/api/users/:userId', authenticate, async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    if (req.user.uid !== userId) {
+      return res.status(403).json({ error: 'Forbidden: Cannot access other user data' });
+    }
+    const userDoc = await db.collection('Users').doc(userId).get();
+    if (userDoc.exists) {
+      res.status(200).json({ ...userDoc.data(), role: req.user.role });
+    } else {
+      res.status(404).json({ error: 'User not found' });
+    }
+  } catch (error) {
+    console.error('Error getting user data:', error);
+    res.status(500).json({ error: 'Failed to get user data', details: error.message });
+  }
+});
+
+app.patch('/api/users/:userId', authenticate, async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    if (req.user.uid !== userId) {
+      return res.status(403).json({ error: 'Forbidden: Cannot update other user data' });
+    }
+    const { name, email } = req.body;
+    const updates = {};
+    if (name) updates.Name = name;
+    if (email) updates.Email = email;
+
+    if (Object.keys(updates).length > 0) {
+      await db.collection('Users').doc(userId).update(updates);
+      res.status(200).json({ message: 'User data updated successfully' });
+    } else {
+      res.status(200).json({ message: 'No updates provided' });
+    }
+  } catch (error) {
+    console.error('Error updating user data:', error);
+    res.status(500).json({ error: 'Failed to update user data', details: error.message });
+  }
+});
+
+app.delete('/api/users/:userId', authenticate, async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    if (req.user.uid !== userId) {
+      return res.status(403).json({ error: 'Forbidden: Cannot delete other user accounts' });
+    }
+    await db.collection('Users').doc(userId).delete();
+    res.status(200).json({ message: 'User deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    res.status(500).json({ error: 'Failed to delete user', details: error.message });
+  }
+});
 
 // --- Utility Endpoints ---
+app.get('/api/roles/:roleName/size', authenticate, async (req, res) => {
+  try {
+    const roleName = req.params.roleName;
+    const usersRef = db.collection('Users');
+    const querySnapshot = await usersRef.where('Role', '==', roleName).count().get();
+    res.status(200).json({ count: querySnapshot.data().count });
+  } catch (error) {
+    console.error(`Error getting size of role ${roleName}:`, error);
+    res.status(500).json({ error: `Failed to get size of role ${roleName}`, details: error.message });
+  }
+});
+
+app.get('/api/collections/:collectionName/size', authenticate, async (req, res) => {
+  try {
+    const collectionName = req.params.collectionName;
+    const collectionRef = db.collection(collectionName);
+    const querySnapshot = await collectionRef.count().get();
+    res.status(200).json({ count: querySnapshot.data().count });
+  } catch (error) {
+    console.error(`Error getting size of collection ${collectionName}:`, error);
+    res.status(500).json({ error: `Failed to get size of collection ${collectionName}`, details: error.message });
+  }
+});
 
 
 // --- Seller Card Endpoints ---
