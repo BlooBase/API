@@ -272,7 +272,7 @@ app.get("/api/sellers", async (req, res) => {
 // --- Product Endpoints ---
 app.post("/api/products", authenticate, async (req, res) => {
   try {
-    const { image, name, price } = req.body;
+    const { image, name, price, stock } = req.body; // <-- Add stock here
     const userId = req.user.uid;
 
     // Fetch seller card
@@ -297,6 +297,7 @@ app.post("/api/products", authenticate, async (req, res) => {
       name,
       price,
       genre: storeGenre,
+      stock: typeof stock === "number" ? stock : 1, // <-- Save stock, default to 1 if not provided
       createdAt: new Date(),
     });
 
@@ -328,13 +329,14 @@ app.get("/api/products/seller", authenticate, async (req, res) => {
 app.put("/api/products/:id", authenticate, async (req, res) => {
   try {
     const productId = req.params.id;
-    const { image, name, price } = req.body;
+    const { image, name, price, stock } = req.body; // <-- Add stock here
 
     const productRef = db.collection("Products").doc(productId);
     await productRef.update({
       image,
       name,
       price,
+      stock, // <-- Add this line
       updatedAt: new Date(),
     });
 
