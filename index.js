@@ -393,6 +393,22 @@ app.get("/api/products", async (req, res) => {
     res.status(500).json({ error: "Failed to retrieve products", details: error.message });
   }
 });
+app.get("/api/products/:id", async (req, res) => {
+  try {
+    const productId = req.params.id;
+    const productRef = db.collection("Products").doc(productId);
+    const doc = await productRef.get();
+
+    if (!doc.exists) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+
+    res.status(200).json({ id: doc.id, ...doc.data() });
+  } catch (error) {
+    console.error("Error fetching product by ID:", error);
+    res.status(500).json({ error: "Failed to fetch product", details: error.message });
+  }
+});
 
 
 
