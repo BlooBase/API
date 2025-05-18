@@ -200,7 +200,18 @@ app.post('/api/seller/card', authenticate, async (req, res) => {
     if (docSnapshot.exists) {
       // Update existing card
       await sellerCardRef.update(sellerCardData);
-      res.status(200).json({ message: 'Seller card updated successfully.' });
+
+      // --- Update all products with the new store name ---
+      const productsRef = db.collection('Products');
+      const productsSnap = await productsRef.where('SellerID', '==', userId).get();
+      const batch = db.batch();
+      productsSnap.forEach(doc => {
+        batch.update(doc.ref, { Seller: title });
+      });
+      await batch.commit();
+      // ---------------------------------------------------
+
+      res.status(200).json({ message: 'Seller card and products updated successfully.' });
     } else {
       // Create a new card with the user ID as the document ID
       await sellerCardRef.set(sellerCardData);
