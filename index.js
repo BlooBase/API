@@ -201,15 +201,15 @@ app.post('/api/seller/card', authenticate, async (req, res) => {
       // Update existing card
       await sellerCardRef.update(sellerCardData);
 
-      // --- Update all products with the new store name ---
+      // --- Update all products with the new store name AND genre ---
       const productsRef = db.collection('Products');
       const productsSnap = await productsRef.where('SellerID', '==', userId).get();
       const batch = db.batch();
       productsSnap.forEach(doc => {
-        batch.update(doc.ref, { Seller: title });
+        batch.update(doc.ref, { Seller: title, genre: genre }); // Update both fields
       });
       await batch.commit();
-      // ---------------------------------------------------
+      // -----------------------------------------------------------
 
       res.status(200).json({ message: 'Seller card and products updated successfully.' });
     } else {
