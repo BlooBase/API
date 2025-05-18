@@ -147,7 +147,7 @@ app.get('/api/collections/:collectionName/size', authenticate, async (req, res) 
 });
 
 
-// --- Seller Card Endpoints ---
+// --- Seller and Card Endpoints ---
 app.delete('/api/seller/card', authenticate, async (req, res) => {
   try {
     const userId = req.user.uid;
@@ -171,6 +171,44 @@ app.delete('/api/seller/card', authenticate, async (req, res) => {
   } catch (error) {
     console.error("Error deleting seller card:", error);
     res.status(500).json({ error: "Failed to delete seller card", details: error.message });
+  }
+});
+app.post('/api/seller/card', authenticate, async (req, res) => {
+  try {
+    const userId = req.user.uid;
+    const { color, description, genre, image, textColor, title } = req.body;
+
+    if (!color || !description || !genre || !image || !textColor || !title) {
+      return res.status(400).json({ error: 'Missing required seller card data.' });
+    }
+
+    const sellerCardData = {
+      color,
+      description,
+      genre,
+      image, // This is the Firebase Storage path
+      textColor,
+      title,
+      userId: userId, // Associate the card with the user
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+
+    // Check if a seller card already exists for this user
+    const sellerCardRef = db.collection('Sellers').doc(userId);
+    const docSnapshot = await sellerCardRef.get();
+
+    if (docSnapshot.exists) {
+      // Update existing card
+      await sellerCardRef.update(sellerCardData);
+      res.status(200).json({ message: 'Seller card updated successfully.' });
+    } else {
+      // Create a new card with the user ID as the document ID
+      await sellerCardRef.set(sellerCardData);
+      res.status(201).json({ message: 'Seller card created successfully.' });
+    }
+  } catch (error) {
+    console.error('Error creating/updating seller card:', error);
+    res.status(500).json({ error: 'Failed to create/update seller card', details: error.message });
   }
 });
 app.post('/api/sellers', authenticate, async (req, res) => {
