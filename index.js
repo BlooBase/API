@@ -45,7 +45,7 @@ const authenticate = async (req, res, next) => {
 };
 
 
-app.post('/api/users',  async (req, res) => {
+app.post('/api/users', authenticate, async (req, res) => {
   try {
     const { userId, email, name, role, authProvider } = req.body;
     if (req.user.uid !== userId) {
