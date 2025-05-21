@@ -146,6 +146,157 @@ app.get('/api/collections/:collectionName/size', authenticate, async (req, res) 
   }
 });
 
+app.get('/api/seller/latest', authenticate, async (req, res) => {
+  try {
+    const sellersRef = db.collection('Sellers');
+
+    const snapshot = await sellersRef
+      .orderBy('updatedAt', 'desc')
+      .limit(5)
+      .get();
+
+    if (snapshot.empty) {
+      return res.status(200).json([]);
+    }
+
+    const latestSellers = [];
+    snapshot.forEach(doc => {
+      const sellerData = doc.data();
+      console.log(sellerData.title)
+      latestSellers.push({
+        id: doc.id,
+        name: sellerData.title,
+      });
+    });
+    console.log(latestSellers.length)
+    console.log(latestSellers)
+    return res.status(200).json(latestSellers);
+
+  } catch (error) {
+    console.error('Error fetching latest sellers:', error);
+    if (error.code === 'permission-denied') {
+      return res.status(403).json({ message: 'Permission denied to access sellers data.' });
+    }
+    return res.status(500).json({ message: 'Internal server error while fetching latest sellers.' });
+  }
+});
+app.get("/api/sellers/best", authenticate, async (req, res) => {
+  try {
+    const ordersRef = db.collection("Orders");
+    const snapshot = await ordersRef.get();
+
+    if (snapshot.empty) {
+      return res.status(200).json([]);
+    }
+
+    const sellerCounts = {};
+
+    snapshot.forEach(doc => {
+      const orderData = doc.data();
+
+      if (Array.isArray(orderData.items) && orderData.items.length > 0) {
+        orderData.items.forEach(item => {
+          if (item.Seller) {
+            const sellerName = item.Seller;
+            sellerCounts[sellerName] = (sellerCounts[sellerName] || 0) + 1;
+          }
+        });
+      }
+    });
+
+    const sortedSellers = Object.keys(sellerCounts)
+      .map(seller => ({ seller, count: sellerCounts[seller] }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+
+    res.status(200).json(sortedSellers);
+  } catch (error) {
+    console.error("Error fetching top sellers:", error);
+    res.status(500).json({ error: "Failed to fetch top sellers", details: error.message });
+  }
+});
+app.get('/api/sales/total', authenticate, async (req, res) => {
+  try {
+    const ordersRef = db.collection('Orders');
+    const snapshot = await ordersRef.get();
+
+    if (snapshot.empty) {
+      return res.status(200).json({ totalSales: 0 });
+    }
+
+    let totalSales = 0;
+
+    const parsePrice = (priceValue) => {
+      if (typeof priceValue === 'string') {
+        const numericString = priceValue.replace(/[^0-9.-]+/g, '').trim();
+        return parseFloat(numericString) || 0;
+      }
+      return parseFloat(priceValue) || 0;
+    };
+
+    snapshot.forEach(doc => {
+      const orderData = doc.data();
+      let orderTotal = 0;
+
+      if (Array.isArray(orderData.items)) {
+        orderData.items.forEach(item => {
+          const itemPrice = parsePrice(item.price);
+          const itemQuantity = typeof item.quantity === 'number' ? item.quantity : 1;
+          const itemSubtotal = itemPrice * itemQuantity;
+          if (!isNaN(itemSubtotal)) {
+            orderTotal += itemSubtotal;
+          }
+        });
+      }
+
+      totalSales += orderTotal;
+    });
+
+    res.status(200).json({ totalSales: parseFloat(totalSales.toFixed(2)) });
+  } catch (error) {
+    console.error('Error calculating overall sales:', error);
+    res.status(500).json({ error: 'Failed to calculate overall sales', details: error.message });
+  }
+});
+app.get('/api/orders/latest', authenticate, async (req, res) => {
+  try {
+    const ordersRef = db.collection('Orders');
+    const snapshot = await ordersRef.orderBy('createdAt', 'desc').limit(5).get();
+
+    const parsePrice = (priceString) => {
+      if (typeof priceString === 'string') {
+        const numericString = priceString.replace('R', '').trim();
+        return parseFloat(numericString) || 0;
+      }
+      return parseFloat(priceString) || 0;
+    };
+
+    const latestOrders = [];
+    snapshot.forEach((doc) => {
+      const data = doc.data();
+      const total = Array.isArray(data.items)
+        ? data.items.reduce((sum, item) => {
+            const itemPrice = parsePrice(item.price);
+            const itemQuantity = typeof item.quantity === 'number' ? item.quantity : 1;
+            return sum + itemPrice * itemQuantity;
+          }, 0).toFixed(2)
+        : '0.00';
+
+      latestOrders.push({
+        id: doc.id,
+        total,
+      });
+    });
+
+    res.status(200).json({ latestOrders });
+  } catch (error) {
+    console.error("Error fetching latest orders:", error);
+    res.status(500).json({ error: "Failed to fetch latest orders", details: error.message });
+  }
+});
+
+
+
 
 // --- Seller and Card Endpoints ---
 app.delete('/api/seller/card', authenticate, async (req, res) => {
@@ -186,10 +337,10 @@ app.post('/api/seller/card', authenticate, async (req, res) => {
       color,
       description,
       genre,
-      image, // This is the Firebase Storage path
+      image, 
       textColor,
       title,
-      userId: userId, // Associate the card with the user
+      userId: userId,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     };
 
@@ -268,11 +419,100 @@ app.get("/api/sellers", async (req, res) => {
   }
 });
 
+//---Order Endpoints--
+app.get("/api/orders/:orderId", authenticate, async (req, res) => {
+  try {
+    const orderId = req.params.orderId;
+    const orderDocRef = db.collection("Orders").doc(orderId);
+    const orderSnap = await orderDocRef.get();
+
+    if (!orderSnap.exists) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+
+    res.status(200).json({ id: orderSnap.id, ...orderSnap.data() });
+  } catch (error) {
+    console.error("Error retrieving order:", error);
+    res.status(500).json({ error: "Failed to retrieve order", details: error.message });
+  }
+});
+app.post("/api/orders", authenticate, async (req, res) => {
+  try {
+    const userId = req.user.uid;
+    const orderDetails = req.body;
+
+ 
+    const cartDocRef = db.collection("Carts").doc(userId);
+    const cartDocSnap = await cartDocRef.get();
+    const cartData = cartDocSnap.exists ? cartDocSnap.data() : null;
+    const cartItems = cartData?.items || [];
+
+    if (!cartItems.length) {
+      return res.status(400).json({ error: "Cart is empty" });
+    }
+
+  
+    const orderPayload = {
+      userId,
+      items: cartItems,
+      ...orderDetails,
+      createdAt: new Date().toISOString(),
+      status: "Pending",
+    };
+
+    const orderDocRef = db.collection("Orders").doc();
+    await orderDocRef.set(orderPayload);
+
+    for (const item of cartItems) {
+      if (item.id) {
+        const productRef = db.collection("Products").doc(item.id);
+        const productSnap = await productRef.get();
+        if (productSnap.exists && productSnap.data().stock !== undefined) {
+          await productRef.update({
+            sales: admin.firestore.FieldValue.increment(1),
+            stock: admin.firestore.FieldValue.increment(-1),
+          });
+        } else {
+          await productRef.update({
+            sales: admin.firestore.FieldValue.increment(1),
+          });
+        }
+      }
+    }
+
+  
+    await cartDocRef.set({ items: [] }, { merge: true });
+
+    res.status(200).json({ id: orderDocRef.id, ...orderPayload });
+  } catch (error) {
+    console.error("Error placing order:", error);
+    res.status(500).json({ error: "Failed to place order", details: error.message });
+  }
+});
+app.get("/api/orders", authenticate, async (req, res) => {
+  try {
+    const userId = req.user.uid;
+
+    const ordersRef = db.collection("Orders");
+    const q = ordersRef.where("userId", "==", userId);
+    const snapshot = await q.get();
+
+    const orders = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+
+    res.status(200).json(orders);
+  } catch (error) {
+    console.error("Error fetching user orders:", error);
+    res.status(500).json({ error: "Failed to retrieve user orders", details: error.message });
+  }
+});
 
 // --- Product Endpoints ---
 app.post("/api/products", authenticate, async (req, res) => {
   try {
-    const { image, name, price, stock } = req.body; // <-- Add stock here
+    const { image, name, price } = req.body;
     const userId = req.user.uid;
 
     // Fetch seller card
@@ -297,7 +537,6 @@ app.post("/api/products", authenticate, async (req, res) => {
       name,
       price,
       genre: storeGenre,
-      stock: typeof stock === "number" ? stock : 1, // <-- Save stock, default to 1 if not provided
       createdAt: new Date(),
     });
 
@@ -329,14 +568,13 @@ app.get("/api/products/seller", authenticate, async (req, res) => {
 app.put("/api/products/:id", authenticate, async (req, res) => {
   try {
     const productId = req.params.id;
-    const { image, name, price, stock } = req.body; // <-- Add stock here
+    const { image, name, price } = req.body;
 
     const productRef = db.collection("Products").doc(productId);
     await productRef.update({
       image,
       name,
       price,
-      stock, // <-- Add this line
       updatedAt: new Date(),
     });
 
@@ -391,22 +629,6 @@ app.get("/api/products", async (req, res) => {
   } catch (error) {
     console.error("Failed to fetch products:", error);
     res.status(500).json({ error: "Failed to retrieve products", details: error.message });
-  }
-});
-app.get("/api/products/:id", async (req, res) => {
-  try {
-    const productId = req.params.id;
-    const productRef = db.collection("Products").doc(productId);
-    const doc = await productRef.get();
-
-    if (!doc.exists) {
-      return res.status(404).json({ error: "Product not found" });
-    }
-
-    res.status(200).json({ id: doc.id, ...doc.data() });
-  } catch (error) {
-    console.error("Error fetching product by ID:", error);
-    res.status(500).json({ error: "Failed to fetch product", details: error.message });
   }
 });
 
