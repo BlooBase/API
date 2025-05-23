@@ -649,12 +649,15 @@ app.get("/api/products", async (req, res) => {
     res.status(500).json({ error: "Failed to retrieve products", details: error.message });
   }
 });
+// PATCH /api/products/:id/total
 app.patch("/api/products/:id/total", authenticate, async (req, res) => {
   try {
     const productId = req.params.id;
     const { amount } = req.body;
 
-    if (typeof amount !== "number") {
+    console.log("PATCH /api/products/:id/total", { productId, amount, type: typeof amount });
+
+    if (typeof amount !== "number" || isNaN(amount)) {
       return res.status(400).json({ error: "Amount must be a number." });
     }
 
@@ -665,7 +668,6 @@ app.patch("/api/products/:id/total", authenticate, async (req, res) => {
       return res.status(404).json({ error: "Product not found" });
     }
 
-    // Get current total or default to 0
     const currentTotal = typeof productSnap.data().total === "number" ? productSnap.data().total : 0;
     const newTotal = currentTotal + amount;
 
