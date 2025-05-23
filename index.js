@@ -649,6 +649,37 @@ app.get("/api/products", async (req, res) => {
     res.status(500).json({ error: "Failed to retrieve products", details: error.message });
   }
 });
+app.patch("/api/products/:id/total", authenticate, async (req, res) => {
+  try {
+    const productId = req.params.id;
+    const { amount } = req.body;
+
+    if (typeof amount !== "number") {
+      return res.status(400).json({ error: "Amount must be a number." });
+    }
+
+    const productRef = db.collection("Products").doc(productId);
+    const productSnap = await productRef.get();
+
+    if (!productSnap.exists) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+
+    // Get current total or default to 0
+    const currentTotal = typeof productSnap.data().total === "number" ? productSnap.data().total : 0;
+    const newTotal = currentTotal + amount;
+
+    await productRef.update({
+      total: newTotal,
+      updatedAt: new Date(),
+    });
+
+    res.status(200).json({ message: "Product total updated.", total: newTotal });
+  } catch (error) {
+    console.error("Error updating product total:", error);
+    res.status(500).json({ error: "Failed to update product total", details: error.message });
+  }
+});
 
 
 
