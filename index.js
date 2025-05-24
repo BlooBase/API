@@ -153,6 +153,7 @@ app.delete('/api/users/:userId', authenticate, async (req, res) => {
       return res.status(403).json({ error: 'Forbidden: Cannot delete other user accounts' });
     }
     await db.collection('Users').doc(userId).delete();
+    await admin.auth().deleteUser(userId); // Delete from Firebase Authentication
     res.status(200).json({ message: 'User deleted successfully' });
   } catch (error) {
     console.error('Error deleting user:', error);
