@@ -209,7 +209,24 @@ app.get("/api/sellers/best", authenticate, async (req, res) => {
       .sort((a, b) => b.count - a.count)
       .slice(0, 5);
 
-    res.status(200).json(sortedSellers);
+    // Fetch the seller card ID for each seller name
+    const sellersWithId = await Promise.all(
+      sortedSellers.map(async (sellerObj) => {
+        // Try to find a seller card with this title
+        const sellersRef = db.collection("Sellers");
+        const sellerSnap = await sellersRef.where("title", "==", sellerObj.seller).limit(1).get();
+        let id = null;
+        if (!sellerSnap.empty) {
+          id = sellerSnap.docs[0].id;
+        }
+        return {
+          id,
+          ...sellerObj
+        };
+      })
+    );
+
+    res.status(200).json(sellersWithId);
   } catch (error) {
     console.error("Error fetching top sellers:", error);
     res.status(500).json({ error: "Failed to fetch top sellers", details: error.message });
