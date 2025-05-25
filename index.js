@@ -152,9 +152,31 @@ app.delete('/api/users/:userId', authenticate, async (req, res) => {
     if (req.user.uid !== userId) {
       return res.status(403).json({ error: 'Forbidden: Cannot delete other user accounts' });
     }
+
+    // 1. Delete seller card and products if user is a seller
+    const sellerDoc = await db.collection('Sellers').doc(userId).get();
+    if (sellerDoc.exists) {
+      // Delete all products for this seller
+      const productsRef = db.collection("Products");
+      const q = productsRef.where("SellerID", "==", userId);
+      const snapshot = await q.get();
+      const batchDeletes = [];
+      snapshot.forEach((docSnap) => {
+        batchDeletes.push(db.collection("Products").doc(docSnap.id).delete());
+      });
+      await Promise.all(batchDeletes);
+
+      // Delete the seller card
+      await db.collection("Sellers").doc(userId).delete();
+    }
+
+    // 2. Delete user from Firestore
     await db.collection('Users').doc(userId).delete();
-    await admin.auth().deleteUser(userId); // Delete from Firebase Authentication
-    res.status(200).json({ message: 'User deleted successfully' });
+
+    // 3. Delete user from Firebase Authentication
+    await admin.auth().deleteUser(userId);
+
+    res.status(200).json({ message: 'User, seller card, and products deleted successfully' });
   } catch (error) {
     console.error('Error deleting user:', error);
     res.status(500).json({ error: 'Failed to delete user', details: error.message });
